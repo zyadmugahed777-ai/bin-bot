@@ -103,7 +103,6 @@ async def handle_bin_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ جاري جلب معلومات BIN...")
     results = []
 
-    # Menggunakan aiohttp untuk request paralel (cepat & tidak nge-hang)
     async with aiohttp.ClientSession() as session:
         tasks = []
         for line in lines:
@@ -114,7 +113,6 @@ async def handle_bin_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 results.append(f"{line} | [BIN Not Found]")
         
-        # Eksekusi paralel dengan batas aman
         for line, task in tasks:
             bin_info = await task
             results.append(f"{line} | {bin_info}")
@@ -149,7 +147,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def handle_raw_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    card_numbers = list(set(re.findall(r'\b\d{15,19}\b', text))) # Unique cards only
+    card_numbers = list(set(re.findall(r'\b\d{15,19}\b', text)))
     
     if not card_numbers:
         await update.message.reply_text("⚠️ لم أجد أرقام بطاقات كاملة (15-19 رقم) في رسالتك.")
@@ -199,7 +197,7 @@ async def clear_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🗑 تم مسح الملفات والنتائج.")
 
 # ==========================================
-# ROUTER (Mendeteksi otomatis apa yang dikirim)
+# ROUTER
 # ==========================================
 async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
@@ -217,32 +215,28 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🗑 مسح البيانات":
         await clear_data(update, context)
     else:
-        # AUTO-ROUTING PINTAR
-        # Jika ada file di memori DAN pesan berisi angka 15-19 digit -> Raw Search
         has_full_card = re.search(r'\b\d{15,19}\b', text)
         if user_id in user_files and has_full_card:
             await handle_raw_search(update, context)
-        # Jika bukan, anggap saja minta BIN Lookup
         else:
             await handle_bin_lookup(update, context)
 
 # ==========================================
-# MAIN RUNNER
+# MAIN RUNNER (FIXED FOR PYTHON 3.14)
 # ==========================================
+async def post_init(application: Application) -> None:
+    asyncio.create_task(start_web_server())
+
 def main():
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN is missing!")
         return
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.TXT, handle_file_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_router))
-
-    # Start Web Server for Render
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_web_server())
 
     logger.info("Bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
